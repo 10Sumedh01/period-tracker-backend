@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from src.models.user import User, db # Assuming User and db are here
 from datetime import datetime
 from src.models.user import db
 from src.models.ovulation import Ovulation
@@ -121,3 +122,67 @@ def delete_ovulation(ovulation_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+
+# Create a blueprint for ovulation-related routes
+ovulation_bp = Blueprint('ovulation_api', __name__, url_prefix='/api')
+
+@ovulation_bp.route('/users/<int:user_id>/ovulations', methods=['GET'])
+def get_user_ovulations(user_id):
+    """
+    Retrieves all ovulation entries for a specific user.
+    """
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    ovulations = Ovulation.query.filter_by(user_id=user_id).all()
+    if not ovulations:
+        # Return an empty list if no ovulations for the user, indicating success with no data
+        return jsonify([]), 200
+
+    return jsonify([ovulation.to_dict() for ovulation in ovulations]), 200
+
+@ovulation_bp.route('/users/<int:user_id>/ovulations', methods=['POST'])
+def create_user_ovulation(user_id):
+    """
+    Creates a new ovulation entry for a specific user.
+    """
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid JSON"}), 400
+
+    ovulation_date_str = data.get('ovulation_date')
+    if not ovulation_date_str:
+        return jsonify({"message": "Ovulation date is required"}), 400
+
+    try:
+        ovulation_date = datetime.strptime(ovulation_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"message": "Invalid ovulation_date format. Use YYYY-MM-DD."}), 400
+
+    basal_body_temperature = data.get('basal_body_temperature')
+    # Convert to float if not None, otherwise keep as None
+    if basal_body_temperature is not None:
+        try:
+            basal_body_temperature = float(basal_body_temperature)
+        except ValueError:
+            return jsonify({"message": "Invalid basal_body_temperature format. Must be a number."}), 400
+
+
+    new_ovulation = Ovulation(
+        user_id=user_id,
+        ovulation_date=ovulation_date,
+        basal_body_temperature=basal_body_temperature,
+        cervical_mucus=data.get('cervical_mucus'),
+        symptoms=data.get('symptoms')
+    )
+
+    db.session.add(new_ovulation)
+    db.session.commit()
+
+    return jsonify(new_ovulation.to_dict()), 201

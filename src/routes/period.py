@@ -3,6 +3,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from src.models.user import db
 from src.models.period import Period
+from src.models.user import User, db # Import User and db from where they are defined
+# from src.models.period import Period
 
 period_bp = Blueprint('period', __name__)
 
@@ -126,3 +128,72 @@ def delete_period(period_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+# If you don't have a blueprint yet in this file, you'll need to create one:
+# period_bp = Blueprint('period_api', __name__, url_prefix='/api')
+# And then register it in your main app.py or wherever you configure your Flask app.
+# For example, if you have a main API blueprint, you might add routes to that.
+
+# Assuming 'api_bp' is your main API blueprint that you've imported
+# If not, replace 'api_bp' with the name of your blueprint or create one.
+# For simplicity, let's assume you have a 'period_bp' for period-related routes.
+period_bp = Blueprint('period_api', __name__, url_prefix='/api')
+
+
+@period_bp.route('/users/<int:user_id>/periods', methods=['GET'])
+def get_user_periods(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    periods = Period.query.filter_by(user_id=user_id).all()
+    if not periods:
+        return jsonify([]), 200 # Return an empty list if no periods for the user
+
+    return jsonify([period.to_dict() for period in periods]), 200
+
+# You will also need to add the POST route for creating periods here.
+# For example:
+@period_bp.route('/users/<int:user_id>/periods', methods=['POST'])
+def create_user_period(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid JSON"}), 400
+
+    start_date_str = data.get('start_date')
+    if not start_date_str:
+        return jsonify({"message": "Start date is required"}), 400
+
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"message": "Invalid start_date format. Use YYYY-MM-DD."}), 400
+
+    end_date = None
+    if data.get('end_date'):
+        try:
+            end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"message": "Invalid end_date format. Use YYYY-MM-DD."}), 400
+
+    new_period = Period(
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+        flow_intensity=data.get('flow_intensity'),
+        symptoms=data.get('symptoms')
+    )
+
+    db.session.add(new_period)
+    db.session.commit()
+
+    return jsonify(new_period.to_dict()), 201
+
+# Don't forget to also export or register this blueprint in your main application file (e.g., app.py)
+# For example, in your app.py:
+# from src.routes.period import period_bp
+# app.register_blueprint(period_bp)
